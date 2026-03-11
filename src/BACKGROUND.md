@@ -124,22 +124,15 @@ bonds (within a chain) and bridges (across domains).
 
 An observer can delegate authority to another observer.
 
-```mermaid
-flowchart LR
-    subgraph Parent[Parent Observer]
-        direction LR
-    end
-
-    subgraph Child[Child Observer]
-        direction LR
-    end
-
-    subgraph Process[Process]
-        direction LR
-    end
-
-    Parent -->|observes| Child
-    Child -->|observes| Process
+```obgraph
+node Parent "Parent Observer" @anchored {
+}
+node Child "Child Observer" {
+}
+node Process {
+}
+Child <- Parent : observes
+Process <- Child : observes
 ```
 
 Consider a root CA. It observes the key management practices of a subordinate
@@ -164,9 +157,18 @@ parent's oversight of the child.
 
 With delegation, observers form chains.
 
-```mermaid
-flowchart LR
-    A[Root] --> B[Intermediate] --> C[Intermediate] --> D[Leaf]
+```obgraph
+node Root @anchored {
+}
+node IntA "Intermediate" {
+}
+node IntB "Intermediate" {
+}
+node Leaf {
+}
+IntA <- Root
+IntB <- IntA
+Leaf <- IntB
 ```
 
 A **non-terminal observation** endorses the next observer. A **terminal
@@ -187,9 +189,18 @@ integrity. Links form chains.
 
 **Example: AMD SEV-SNP attestation chain.**
 
-```mermaid
-flowchart LR
-    ARK --> ASK --> VCEK --> report[Attestation Report]
+```obgraph
+node ARK @anchored {
+}
+node ASK {
+}
+node VCEK {
+}
+node Report "Attestation Report" {
+}
+ASK <- ARK : sign
+VCEK <- ASK : sign
+Report <- VCEK : sign
 ```
 
 | Observer | Type         | Observes             | Produces           |
@@ -213,31 +224,34 @@ the same chain.
 
 **Example: X.509 chain validation.**
 
-```mermaid
-stateDiagram-v2
-    state RootCA {
-        root_subj: subject
-        root_pk: public_key
-    }
+```obgraph
+node RootCA "Root CA" @anchored {
+    subject @constrained
+    public_key @constrained
+}
+node IntCA "Intermediate CA" {
+    subject @constrained
+    issuer @critical
+    public_key @constrained
+}
+node Leaf {
+    subject
+    issuer @critical
+}
 
-    state IntermediateCA {
-        int_subj: subject
-        int_iss: issuer
-        int_pk: public_key
-    }
+# Links (integrity guarantees)
+IntCA <- RootCA : sign
+Leaf <- IntCA : sign
 
-    state Leaf {
-        leaf_subj: subject
-        leaf_iss: issuer
-    }
-
-    root_subj --> int_iss : bond
-    root_pk --> IntermediateCA : link
-    int_subj --> leaf_iss : bond
-    int_pk --> Leaf : link
+# Bonds (property comparison within chain)
+IntCA::issuer <= RootCA::subject
+Leaf::issuer <= IntCA::subject
 ```
 
-The arrows labeled "bond" compare properties (issuer must match subject). The
+The arrows labeled "link" show integrity guarantees (the parent's key signs the
+child). The arrows labeled "bond" show property comparisons (issuer must match
+subject). Break any link or bond, validation fails. Unconstrained critical
+properties show a red indicator—a gap in the trust chain. compare properties (issuer must match subject). The
 arrows labeled "link" show integrity guarantees (the parent's key signs the
 child). Break any link or bond, validation fails.
 
@@ -282,20 +296,38 @@ them all.
 - **Auditors** run domains for assurance. SOC 2 reports, financial audits,
   security assessments.
 
-```mermaid
-flowchart LR
-    subgraph Domain1[AMD SEV-SNP]
-        ARK1[ARK] --> ASK1[ASK] --> VCEK1[VCEK]
-    end
-    subgraph Domain2[TPM Manufacturer]
-        MfgCA[Mfg CA] --> EK[EK]
-    end
-    subgraph Domain3[Software Publisher]
-        PubRoot[Pub Root] --> Release[Release]
-    end
-    subgraph Domain4[Enterprise Policy]
-        Policy[Policy Root] --> Approved[Approved Versions]
-    end
+```obgraph
+domain "AMD SEV-SNP" {
+    node ARK @anchored {
+    }
+    node ASK {
+    }
+    node VCEK {
+    }
+}
+domain "TPM Manufacturer" {
+    node MfgCA "Mfg CA" @anchored {
+    }
+    node EK {
+    }
+}
+domain "Software Publisher" {
+    node PubRoot "Pub Root" @anchored {
+    }
+    node Release {
+    }
+}
+domain "Enterprise Policy" {
+    node Policy "Policy Root" @anchored {
+    }
+    node Approved "Approved Versions" {
+    }
+}
+ASK <- ARK
+VCEK <- ASK
+EK <- MfgCA
+Release <- PubRoot
+Approved <- Policy
 ```
 
 Same pattern in each: a root, a chain (or tree), observations with properties.
@@ -342,16 +374,29 @@ Links guarantee integrity (property-to-node). Bonds and bridges compare
 properties (property-to-property). Bonds work within a chain. Bridges work
 across domains.
 
-```mermaid
-flowchart TB
-    subgraph Domain1["Runtime Attestation"]
-        HW[HW Root] --> FW
-        FW --> App
-    end
-    subgraph Domain2["Software Publisher"]
-        Pub[Pub Root] --> Release
-    end
-    Release -.->|"measurement == release.hash"| App
+```obgraph
+domain "Runtime Attestation" {
+    node HW "HW Root" @anchored {
+    }
+    node FW {
+    }
+    node App {
+        measurement @critical
+    }
+}
+domain "Software Publisher" {
+    node Pub "Pub Root" @anchored {
+    }
+    node Release {
+        hash @constrained
+    }
+}
+FW <- HW
+App <- FW
+Release <- Pub
+
+# Bridge (cross-domain constraint)
+App::measurement <= Release::hash
 ```
 
 The bridge connects runtime attestation to the software publisher chain. When
@@ -381,72 +426,77 @@ replays to validate that digest, and an event entry contains the SEV-SNP chip
 ID. Solid arrows show integrity guarantees (signatures, credential binding,
 extend-only registers). Dashed arrows show bridges (property matching).
 
-```mermaid
-stateDiagram-v2
-
-  state SEV_SNP {
-    state ARK {
-      ark_subj: subject
-      ark_iss: issuer
-      ark_pk: public_key
+```obgraph
+domain "SEV-SNP" {
+    node ARK @anchored {
+        subject @constrained
+        issuer @critical
+        public_key @constrained
     }
-    state ASK {
-      ask_subj: subject
-      ask_iss: issuer
-      ask_pk: public_key
+    node ASK {
+        subject @constrained
+        issuer @critical
+        public_key @constrained
     }
-    state VCEK {
-      vcek_subj: subject
-      vcek_iss: issuer
-      vcek_pk: public_key
-      vcek_chip: chip_id
+    node VCEK {
+        subject @constrained
+        issuer @critical
+        public_key @constrained
+        chip_id @constrained
     }
-    state AttestationReport {
-      rpt_chip: chip_id
+    node Report "Attestation Report" @selected {
+        chip_id @critical
     }
-  }
-
-  state TPM {
-    state TPMMfgCA {
-      mfg_subj: subject
-      mfg_iss: issuer
-      mfg_pk: public_key
+}
+domain "TPM" {
+    node MfgCA "TPM Mfg CA" @anchored {
+        subject @constrained
+        issuer @critical
+        public_key @constrained
     }
-    state EK {
-      ek_subj: subject
-      ek_iss: issuer
-      ek_pk: public_key
+    node EK {
+        subject @constrained
+        issuer @critical
+        public_key @constrained
     }
-    state AK {
-      ak_pk: public_key
+    node AK {
+        public_key @critical
     }
-    state TPMQuote {
-      q_pcr: pcr_digest
+    node Quote "TPM Quote" {
+        pcr_digest @constrained
+        signature @critical
     }
-  }
+}
+node TCGLog "TCG Event Log" {
+    event_entries @critical
+}
 
-  state TCGLog {
-    tcg_events: event_entries
-  }
+# Anchors (integrity guarantees)
+ASK <- ARK : sign
+VCEK <- ASK : sign
+Report <- VCEK : sign
+EK <- MfgCA : sign
+AK <- EK : make_credential
+Quote <- AK : sign
+TCGLog <- Quote : replay_validate
 
-  ark_subj --> ark_iss : self-signed
-  mfg_subj --> mfg_iss : self-signed
+# Self-signed pins
+ARK::issuer <= ARK::subject : self_signed
+MfgCA::issuer <= MfgCA::subject : self_signed
 
-  ark_subj --> ask_iss : matches
-  ark_pk --> ASK : signs
-  ask_subj --> vcek_iss : matches
-  ask_pk --> VCEK : signs
-  vcek_pk --> AttestationReport : signs
-  vcek_chip --> rpt_chip : matches
+# Chain bonds
+ASK::issuer <= ARK::subject
+VCEK::issuer <= ASK::subject
+EK::issuer <= MfgCA::subject
+Report::chip_id <= VCEK::chip_id
 
-  mfg_subj --> ek_iss : matches
-  mfg_pk --> EK : signs
+# Integrity constraints
+AK::public_key <= EK::public_key : make_credential
+Quote::signature <= AK::public_key : verified_by
 
-  ek_pk --> AK : MakeCredential
-  ak_pk --> TPMQuote : signs
-
-  q_pcr --> tcg_events : replay validates
-  tcg_events --> rpt_chip : contains
+# Cross-domain bridges
+TCGLog::event_entries <= Quote::pcr_digest : replay_validates
+Report::chip_id <= TCGLog::event_entries : contains
 ```
 
 Just as delegation composes into chains, bridging composes into a federation.
@@ -458,9 +508,18 @@ entire federation.
 
 Most attestations today are linear:
 
-```mermaid
-flowchart LR
-    Firmware --> Bootloader --> Kernel --> Application
+```obgraph
+node Firmware @anchored {
+}
+node Bootloader {
+}
+node Kernel {
+}
+node Application {
+}
+Bootloader <- Firmware
+Kernel <- Bootloader
+Application <- Kernel
 ```
 
 Real systems aren't linear. Components stay resident while later stages boot.
@@ -470,20 +529,41 @@ isolates.
 
 The observation graph of a real system is a tree:
 
-```mermaid
-flowchart TB
-    HW[Hardware Root] --> Firmware
-    HW --> BMC
-    HW --> PSP[PSP/Caliptra]
-    Firmware --> OS[OS Kernel]
-    BMC --> OS
-    PSP --> OS
-    OS --> AppA[App A]
-    OS --> AppB[App B]
-    OS --> AppC[App C]
-    AppC --> Wasm1[Wasm 1]
-    AppC --> Wasm2[Wasm 2]
-    AppC --> Wasm3[Wasm 3]
+```obgraph
+node HW "Hardware Root" @anchored {
+}
+node Firmware {
+}
+node BMC {
+}
+node PSP "PSP/Caliptra" {
+}
+node OS "OS Kernel" {
+}
+node AppA "App A" {
+}
+node AppB "App B" {
+}
+node AppC "App C" {
+}
+node Wasm1 "Wasm 1" {
+}
+node Wasm2 "Wasm 2" {
+}
+node Wasm3 "Wasm 3" {
+}
+Firmware <- HW
+BMC <- HW
+PSP <- HW
+OS <- Firmware
+OS <- BMC
+OS <- PSP
+AppA <- OS
+AppB <- OS
+AppC <- OS
+Wasm1 <- AppC
+Wasm2 <- AppC
+Wasm3 <- AppC
 ```
 
 Two operations on an observation tree:

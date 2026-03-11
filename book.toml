@@ -5,4 +5,8 @@ language = "en"
 [preprocessor.objgraph]
 command = "mdbook-obgraph"
 
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
 [output.html]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
